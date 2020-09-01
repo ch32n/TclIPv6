@@ -33,7 +33,7 @@
 # isIpv6
 # normalize
 # suppress
-# compress
+# contract
 # mask
 # equal
 # prefix
@@ -53,21 +53,32 @@ package provide ipv6 1.0
 
 namespace eval ipv6 {
 	#
-	namespace export isIpv6 normalize suppress compress mask equal prefix Prefix nextIP NextIP nextNet NextNet isOverlap reduceToAggregates ReduceToAggregates collapse Collapse subtract Subtract expandSubnet ExpandSubnet ipv6ToEthMulticast
+	namespace export isIpv6 normalize suppress contract mask equal prefix Prefix nextIP NextIP nextNet NextNet isOverlap reduceToAggregates ReduceToAggregates collapse Collapse subtract Subtract expandSubnet ExpandSubnet ipv6ToEthMulticast
 	#
-	variable NBBL_CHAR_LENGTH 4
+	variable QUARTET_CHAR_LENGTH 4
 	variable HEX_BIT_LENGTH 4
 	variable PREFIX_LENGTH_MIN 0
 	variable PREFIX_LENGTH_MAX 128
 	variable IP_ADDR_CHAR_LENGTH 32
-	variable IP_ADDR_NBBL_LENGTH 8
+	variable IP_ADDR_QUARTET_LENGTH 8
 	variable IP_ADDR_BIT_LENGTH 128
 	#
 	variable IPV6_MULTICAST_PREFIX FF00::
 	variable EHT_IPV6_MUL_FIRST_4_HEX_CHAR 3333
 	#
 	variable OUR_NAMESPACE [namespace current]
-
+	#
+	variable EXPAND_SUBNET_OPT_DEF [dict create -offset 0 -skip 0 -lastNet {}]
+	#
+	proc UpdateDefOpt {DefaultOptDict NewOptVal} {
+		dict for {Opt Val} $NewOptVal {
+			if [dict exists $DefaultOptDict $Opt] {
+				dict set DefaultOptDict $Opt $Val
+			}
+		}
+		return $DefaultOptDict
+	}
+	
 	
 	proc GetMask {Mask} {
 		variable IP_ADDR_BIT_LENGTH
@@ -125,13 +136,13 @@ namespace eval ipv6 {
 	#
 	# Return - IPv6 addres in expanded format
 	proc HexStringToIP {HexString} {
-		variable NBBL_CHAR_LENGTH
+		variable QUARTET_CHAR_LENGTH
 		variable IP_ADDR_CHAR_LENGTH
 		#
 		set IpAddr_tmp {}
 		#
 		for {set i 0} {$i < $IP_ADDR_CHAR_LENGTH} {incr i 4} {
-			set IpAddr_tmp [join [concat $IpAddr_tmp [string range $HexString $i [expr {$i + $NBBL_CHAR_LENGTH - 1}]]] :]
+			set IpAddr_tmp [join [concat $IpAddr_tmp [string range $HexString $i [expr {$i + $QUARTET_CHAR_LENGTH - 1}]]] :]
 		}
 		#
 		return [string toupper $IpAddr_tmp]
@@ -334,24 +345,24 @@ namespace eval ipv6 {
 	#
 	# Return - 0 Valid or 1 Invalid
 	proc CheckLength {IpAddr DoubleColon} {
-		variable IP_ADDR_NBBL_LENGTH
+		variable IP_ADDR_QUARTET_LENGTH
 		#
 		set ErrorStatus 0
 		set Addr       [split $IpAddr :]
 		set AddrLength [llength $Addr]
-		#check ip nibble sum
-		if {!$ErrorStatus && $AddrLength > $IP_ADDR_NBBL_LENGTH} {
+		#check ipv6 quartet sum
+		if {!$ErrorStatus && $AddrLength > $IP_ADDR_QUARTET_LENGTH} {
 			set ErrorStatus 1
 		}
-		#check if ip address nibble sum < 8 and it does not have double colon
-		if {!$ErrorStatus && $AddrLength != $IP_ADDR_NBBL_LENGTH && $DoubleColon != 1} {
+		#check if ipv6 address quartet sum < 8 and it does not have double colon
+		if {!$ErrorStatus && $AddrLength != $IP_ADDR_QUARTET_LENGTH && $DoubleColon != 1} {
 			set ErrorStatus 1
 		}	
-		#check ip address nibble length (should not be more than 4)
+		#check ip address quartet length (should not be more than 4)
 		if {!$ErrorStatus} {
-			foreach Nibble $Addr {
-				set NibbleCharLength [string length $Nibble]
-				if {$NibbleCharLength > 4} {
+			foreach Quartet $Addr {
+				set QuartetCharLength [string length $Quartet]
+				if {$QuartetCharLength > 4} {
 					set ErrorStatus 1
 					break
 				}
@@ -414,7 +425,7 @@ namespace eval ipv6 {
 	proc CheckAndPrepareIP {ipAddrListVar} {
 		variable OUR_NAMESPACE
 		#
-		set IpAddr_tmp {}
+		set IpAddr_tmp [list]
 		#
 		upvar $ipAddrListVar IpAddrList_tmp
 		#
@@ -433,6 +444,7 @@ namespace eval ipv6 {
 				return -code error $result
 			}		
 		}
+		return
 	}	
 	
 	# Check ipv6 address syntax
@@ -452,7 +464,7 @@ namespace eval ipv6 {
 	#
 	# Return - full ipv6 address
 	proc Expand {IpAddr} {
-		variable IP_ADDR_NBBL_LENGTH 
+		variable IP_ADDR_QUARTET_LENGTH 
 		#
 		set IpAddr_tmp $IpAddr
 		#check if address has double colon
@@ -460,13 +472,13 @@ namespace eval ipv6 {
 		#expand ip address
 		if {$DoubleColon == 1} {
 			lassign [SplitIPColon $IpAddr] Prefix Sufix
-			#calculate how many nibbles are suppressed
-			set NibbleLength(Prefix)  [llength [split $Prefix  :]]
-			set NibbleLength(Sufix) [llength [split $Sufix :]]
-			set NibbleSum  [expr {$NibbleLength(Prefix) + $NibbleLength(Sufix)}]
-			set NibbleDiff [expr {$IP_ADDR_NBBL_LENGTH  - $NibbleSum}]
-			#append suppressed nibbles with 0-s
-			set IpAddr_tmp [join [list $Prefix {*}[lrepeat $NibbleDiff 0] $Sufix] :]
+			#calculate how many quartets should be suppressed
+			set QuartetLength(Prefix)  [llength [split $Prefix  :]]
+			set QuartetLength(Sufix) [llength [split $Sufix :]]
+			set QuartetSum  [expr {$QuartetLength(Prefix) + $QuartetLength(Sufix)}]
+			set QuartetDiff [expr {$IP_ADDR_QUARTET_LENGTH  - $QuartetSum}]
+			#append suppressed quartets with 0-s
+			set IpAddr_tmp [join [list $Prefix {*}[lrepeat $QuartetDiff 0] $Sufix] :]
 		}
 		return [string toupper $IpAddr_tmp]
 	}
@@ -478,7 +490,7 @@ namespace eval ipv6 {
 	#
 	#Return - full ipv6 address with leading 0
 	proc Normalize {IpAddr} {
-		variable NBBL_CHAR_LENGTH
+		variable QUARTET_CHAR_LENGTH
 		#
 		lassign [SplitIPMask $IpAddr] Addr Mask
 		#
@@ -486,11 +498,11 @@ namespace eval ipv6 {
 		#
 		set IpAddr_tmp {}
 		#
-		foreach Nibble [split $IpAddrExp :] {
-			set NibbleCharLength [string length $Nibble]
-			#append nibble leading zeros
-			set Nibble [join [concat [string repeat 0 [expr {$NBBL_CHAR_LENGTH - $NibbleCharLength}]] $Nibble] {}]
-			set IpAddr_tmp [join [concat $IpAddr_tmp $Nibble] :]
+		foreach Quartet [split $IpAddrExp :] {
+			set QuartetCharLength [string length $Quartet]
+			#append quartet leading zeros
+			set Quartet [join [concat [string repeat 0 [expr {$QUARTET_CHAR_LENGTH - $QuartetCharLength}]] $Quartet] {}]
+			set IpAddr_tmp [join [concat $IpAddr_tmp $Quartet] :]
 		}
 		#
 		return [WithMask $IpAddr_tmp $Mask]
@@ -510,8 +522,8 @@ namespace eval ipv6 {
 	#
 	# Return - suppressed ipv6 address
 	proc suppress {IpAddr} {
-		variable IP_ADDR_NBBL_LENGTH
-		variable NBBL_CHAR_LENGTH
+		variable IP_ADDR_QUARTET_LENGTH
+		variable QUARTET_CHAR_LENGTH
 		#
 		CheckAndPrepareIP IpAddr
 		#
@@ -519,14 +531,14 @@ namespace eval ipv6 {
 		#
 		set IpAddr_tmp {}
 		#
-		foreach Nibble [split $Addr :] {
-			if {$Nibble ne "0000"} {
-				set Nibble [string trimleft $Nibble 0]
+		foreach Quartet [split $Addr :] {
+			if {$Quartet ne "0000"} {
+				set Quartet [string trimleft $Quartet 0]
 			} else {
-				set Nibble 0
+				set Quartet 0
 			}
 			#
-			set IpAddr_tmp [join [concat $IpAddr_tmp $Nibble] :]
+			set IpAddr_tmp [join [concat $IpAddr_tmp $Quartet] :]
 		}
 		#
 		return [WithMask $IpAddr_tmp $Mask]
@@ -537,8 +549,8 @@ namespace eval ipv6 {
 	# 
 	# IpAddr - ipv6 address with or without mask
 	#
-	# Return - compressed ipv6 address
-	proc compress {IpAddr} {
+	# Return - compact form of ipv6 address
+	proc contract {IpAddr} {
 		#
 		CheckAndPrepareIP IpAddr
 		#
@@ -549,21 +561,21 @@ namespace eval ipv6 {
 		#
 		set IpAddr_tmp $IpSupAddr
 		set StartZeroIndx 0
-		set NibblePosition 0
+		set QuartetPosition 0
 		set NewSeq 1
 		#
-		foreach Nibble $SplitIP {
-			if {$Nibble eq "0" && $NewSeq == 1} {
-				incr ZeroLength($NibblePosition)
-				set  StartZeroIndx $NibblePosition
+		foreach Quartet $SplitIP {
+			if {$Quartet eq "0" && $NewSeq == 1} {
+				incr ZeroLength($QuartetPosition)
+				set  StartZeroIndx $QuartetPosition
 				set  NewSeq 0
-			} elseif {$Nibble eq "0" && $NewSeq == 0} {
+			} elseif {$Quartet eq "0" && $NewSeq == 0} {
 				incr ZeroLength($StartZeroIndx)
 			} else {
 				set NewSeq 1
 			}
 			#
-			incr NibblePosition
+			incr QuartetPosition
 		}
 		#
 		if [info exists ZeroLength] {
@@ -652,7 +664,7 @@ namespace eval ipv6 {
 		CheckAndPrepareIP IpAddr
 		#
 		try {
-			set Prefix [compress [Prefix $IpAddr]]
+			set Prefix [contract [Prefix $IpAddr]]
 		} on error {result options} {
 			return -code error $result
 		}
@@ -697,7 +709,7 @@ namespace eval ipv6 {
 		CheckAndPrepareIP IpAddr
 		#
 		try {
-			set IpAddr_tmp [compress [NextIP $IpAddr $Offset]]
+			set IpAddr_tmp [contract [NextIP $IpAddr $Offset]]
 		} on error {result options} {
 			return -code error $result
 		}
@@ -741,7 +753,7 @@ namespace eval ipv6 {
 		CheckAndPrepareIP IPPrefix
 		#
 		try {
-			set IpAddr_tmp [compress [NextNet $IPPrefix $Offset]]
+			set IpAddr_tmp [contract [NextNet $IPPrefix $Offset]]
 		} on error {result options} {
 			return -code error $result
 		}
@@ -857,7 +869,7 @@ namespace eval ipv6 {
 		CheckAndPrepareIP PrefixList 
 		#
 		foreach Prefix [ReduceToAggregates $PrefixList] {
-			lappend PrefixList_tmp [compress $Prefix]
+			lappend PrefixList_tmp [contract $Prefix]
 		}
 		#
 		return $PrefixList_tmp
@@ -935,7 +947,7 @@ namespace eval ipv6 {
 		CheckAndPrepareIP PrefixList
 		#
 		foreach Prefix [Collapse $PrefixList] {
-			lappend PrefixList_tmp [compress $Prefix]
+			lappend PrefixList_tmp [contract $Prefix]
 		}
 		#
 		return $PrefixList_tmp
@@ -1012,7 +1024,7 @@ namespace eval ipv6 {
 		set PrefixList_tmp {}
 		#
 		foreach Prefix [Subtract $PosPrefixList $NegPrefixList] {
-			lappend PrefixList_tmp [compress $Prefix]
+			lappend PrefixList_tmp [contract $Prefix]
 		}
 		#
 		return $PrefixList_tmp
@@ -1023,37 +1035,53 @@ namespace eval ipv6 {
 	#
 	# IPPrefix - ipv6 address with or without mask
 	# NewMask  - prefix length of desired new subnetworks
-	# Offset   - number of subnetwork which should be returnd (default 0: all subnets)
-	#
+	# Optional Args:
+	#   -Offset  - number of subnets which should be returned (default 0: all subnets)
+	#   -lastNet - calculates new subnets after given ipv6 network (default IPPrefix)
+	#   -skip    - start calculating subnets after given offset
 	# return   - IPv6 prefix list of new subnetworks 
-	proc ExpandSubnet {IPPrefix NewMask {Offset 0}} {
+	proc ExpandSubnet {IPPrefix NewMask args} {
+		variable EXPAND_SUBNET_OPT_DEF
+		#
+		set Opt [UpdateDefOpt $EXPAND_SUBNET_OPT_DEF $args]
+		#
 		CheckAndPrepareIP IPPrefix
 		#
-		set OldMask [mask $IPPrefix]
-		set Prefix  [Prefix $IPPrefix]
+		set LastNet [dict get $Opt -lastNet]
+		if ![catch {IsIpv6 $LastNet}] {
+			set LastNet [Normalize $LastNet]
+			set Prefix [Prefix [NextNet [Prefix $LastNet]/$NewMask]]
+		} else {
+			set Prefix [Prefix $IPPrefix]
+		}
+		set Prefix [Prefix [NextNet $Prefix/$NewMask [dict get $Opt -skip]]]
 		#
+		set OldMask [mask $IPPrefix]
 		set NumSubnets [expr {round(pow(2, ($NewMask - $OldMask)))}]
 		#
+		set Offset [dict get $Opt -offset]
 		if {$Offset <= $NumSubnets && $Offset != 0} {
 			set NumSubnets $Offset
 		}
 		#
-		set ret {}
-		for {set idx 0} {$idx < $NumSubnets} {incr idx} {
-			lappend ret "${Prefix}/${NewMask}"
+		set PrefixList_tmp [list]
+		for {set SubnetId 0} {$SubnetId < $NumSubnets} {incr SubnetId} {
+			if ![ipv6::isOverlap $IPPrefix $Prefix] {
+				break
+			}
+			lappend PrefixList_tmp [join [list $Prefix $NewMask] /]
 			set Prefix [Prefix [NextNet $Prefix/$NewMask]]
 		}
-		return $ret
+		return $PrefixList_tmp
 	}
 
 	# Same as ExpandSubnet but returns ipv6 prefixes in compact format 
-	proc expandSubnet {IPPrefix NewMask {Offset 0}} {
+	proc expandSubnet {IPPrefix NewMask args} {
 		CheckAndPrepareIP IPPrefix
 		#
-		set PrefixList_tmp {}
-		#
-		foreach Prefix [ExpandSubnet $IPPrefix $NewMask $Offset] {
-			lappend PrefixList_tmp [compress $Prefix]
+		set PrefixList_tmp [list]
+		foreach Prefix [ExpandSubnet $IPPrefix $NewMask {*}$args] {
+			lappend PrefixList_tmp [contract $Prefix]
 		}
 		#
 		return $PrefixList_tmp
