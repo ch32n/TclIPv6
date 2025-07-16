@@ -19,7 +19,7 @@ This package offers a suite of procedures to simplify the handling of IPv6 addre
 - **ipv6::reduceToAggregates** *PrefixList*
 - **ipv6::collapse** *PrefixList*
 - **ipv6::subtract** *PosPrefixList* *NegPrefixList*
-- **ipv6::expandSubnet** *IPPrefix* *NewMask* ?**-offset?** *count*? ??**-lastNet?** *IPPrefix*? ??**-skip?** *count*?
+- **ipv6::expandSubnet** *IPPrefix* *NewMask* ?**-offset** *count*? ?**-lastNet** *IPPrefix*? ?**-skip** *count*?
 - **ipv6::ipv6ToEthMulticast** *IpAddrList*
 
 ---
